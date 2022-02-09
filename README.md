@@ -37,11 +37,27 @@ default).  If you want to install to some location other than the default,
 specify the `prefix` environment variable.  For example, to install to 
 `/tmp/nestedvm`, you can run `make install prefix=/tmp`.
 
+### Compile C source
+`mips-unknown-elf-gcc -O3 -mmemcpy -ffunction-sections -fdata-sections -falign-functions=512 -fno-rename-registers -fno-schedule-insns -fno-delayed-branch -march=mips1 -specs=/usr/local/nestedvm/mips-unknown-elf/lib/crt0-override.spec -I. -Wall -Wno-unused -c -o build/com/test/Test.o test.c`
+
+### Link to a MIPS binary
+`mips-unknown-elf-gcc -o build/com/test/Test.mips build/com/test/Test.o -march=mips1 -specs=/usr/local/nestedvm/mips-unknown-elf/lib/crt0-override.spec --static -Wl,--gc-sections`
+
+### Compile to a Java class
+`java -cp "/usr/local/nestedvm/share/java/nestedvm-compiler.jar:build" org.ibex.nestedvm.Compiler -outformat class -d build com.test.Test build/com/test/Test.mips`
+
+### Running the resulting Java application
+`java -cp /usr/local/nestedvm/share/java/nestedvm-runtime.jar:build com.test.Test`
+
+
 *Known issue: the version of binutils being used does not build properly with
   GCC 4.9... please try GCC 4.8 or clang*
 
 Below are some system-specific build instructions for this repository; pull
-requests with steps for other environments are certainly welcome.
+requests with steps for other environments are certainly welcome.  The easiest
+way I've found to build this, as of 2022, is to install Ubuntu 14.04.6 in
+VirtualBox and follow the Debian 8 instructions.  I think that route gave me the
+least fuss.
 
 ### Debian 8 etc:
 
