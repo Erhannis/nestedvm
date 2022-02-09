@@ -37,27 +37,14 @@ default).  If you want to install to some location other than the default,
 specify the `prefix` environment variable.  For example, to install to 
 `/tmp/nestedvm`, you can run `make install prefix=/tmp`.
 
-### Compile C source
-`mips-unknown-elf-gcc -O3 -mmemcpy -ffunction-sections -fdata-sections -falign-functions=512 -fno-rename-registers -fno-schedule-insns -fno-delayed-branch -march=mips1 -specs=/usr/local/nestedvm/mips-unknown-elf/lib/crt0-override.spec -I. -Wall -Wno-unused -c -o build/com/test/Test.o test.c`
-
-### Link to a MIPS binary
-`mips-unknown-elf-gcc -o build/com/test/Test.mips build/com/test/Test.o -march=mips1 -specs=/usr/local/nestedvm/mips-unknown-elf/lib/crt0-override.spec --static -Wl,--gc-sections`
-
-### Compile to a Java class
-`java -cp "/usr/local/nestedvm/share/java/nestedvm-compiler.jar:build" org.ibex.nestedvm.Compiler -outformat class -d build com.test.Test build/com/test/Test.mips`
-
-### Running the resulting Java application
-`java -cp /usr/local/nestedvm/share/java/nestedvm-runtime.jar:build com.test.Test`
-
-
 *Known issue: the version of binutils being used does not build properly with
   GCC 4.9... please try GCC 4.8 or clang*
 
 Below are some system-specific build instructions for this repository; pull
-requests with steps for other environments are certainly welcome.  The easiest
-way I've found to build this, as of 2022, is to install Ubuntu 14.04.6 in
-VirtualBox and follow the Debian 8 instructions.  I think that route gave me the
-least fuss.
+requests with steps for other environments are certainly welcome.
+([Erhannis:] The easiest way I've found to build this, as of 2022, is to
+install Ubuntu 14.04.6 in VirtualBox and follow the Debian 8 instructions.
+I think that route gave me the least fuss.)
 
 ### Debian 8 etc:
 
@@ -77,6 +64,146 @@ least fuss.
     git clone https://github.com/bgould/nestedvm
     cd /usr/local/src/nestedvm
     make dist 
+
+
+
+
+[Erhannis:] After this point is information reconstituted by people discovering this
+repo later, and reading the tests and code and so forth.  God speed.
+
+## Usage
+
+### Compile C source
+`mips-unknown-elf-gcc -O3 -mmemcpy -ffunction-sections -fdata-sections -falign-functions=512 -fno-rename-registers -fno-schedule-insns -fno-delayed-branch -march=mips1 -specs=/usr/local/nestedvm/mips-unknown-elf/lib/crt0-override.spec -I. -Wall -Wno-unused -c -o build/com/test/Test.o test.c`
+
+### Link to a MIPS binary
+`mips-unknown-elf-gcc -o build/com/test/Test.mips build/com/test/Test.o -march=mips1 -specs=/usr/local/nestedvm/mips-unknown-elf/lib/crt0-override.spec --static -Wl,--gc-sections`
+
+### Compile to a Java class
+`java -cp "/usr/local/nestedvm/share/java/nestedvm-compiler.jar:build" org.ibex.nestedvm.Compiler -outformat class -d build com.test.Test build/com/test/Test.mips`
+
+### Running the resulting Java application
+`java -cp /usr/local/nestedvm/share/java/nestedvm-runtime.jar:build com.test.Test`
+
+### Using the Java classes
+You can create a jar around a class `Test` at e.g. `com/test/Test.class` with `jar cf Test.jar com`.
+You can then install that jar into your maven local repository with
+```bash
+mvn install:install-file \
+    -Dfile=Test.jar \
+    -DgroupId=test.test.test \
+    -DartifactId=nestedvm-test-classes \
+    -Dversion=0.0.0-SNAPSHOT \
+    -Dpackaging=jar
+```
+Likewise install a copy of the e.g. unix_runtime.jar with
+```bash
+mvn install:install-file \
+    -Dfile=unix_runtime.jar \
+    -DgroupId=org.ibex.nestedvm \
+    -Dversion=1.0.0-SNAPSHOT \
+    -DartifactId=unix-runtime \
+    -Dpackaging=jar
+```
+(If you create a jar out of the sources in `src/`, in the same way you'd make one for classes,
+you can add
+```
+    -Dsources=nestedvm_src.jar \
+    -Djavadoc=nestedvm_src.jar \
+```
+in the middle of that command to install the sources, as well.)
+Once you have those two jars installed to your local maven repo, you can
+pull them in as dependencies with
+```
+<dependency>
+    <groupId>org.ibex.nestedvm</groupId>
+    <artifactId>unix-runtime</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+<dependency>
+    <groupId>test.test.test</groupId>
+    <artifactId>nestedvm-test-classes</artifactId>
+    <version>0.0.0-SNAPSHOT</version>
+</dependency>
+```
+You can then run the file in your Java code with e.g.
+```
+int result = new Test.run("com.test.Test", new String[]{});
+```
+That's not particularly useful, though.  See `src/tests/` for examples of
+more intricate usage.  I've gone through a bunch of the tests and filtered
+out some use case examples - I haven't tested all of these myself, so
+buyer beware.  See original tests if you encounter problems.
+
+#### Calling functions
+Given c method
+```c
+int test(int x) {
+    return x*4;
+}
+```
+you can call it from Java if you first prepend it
+with a declaration flagged to prevent it being optimized away, like:
+```c
+int x4(int x) __attribute__((section(".text")));
+int x4(int x) {
+    return x*4;
+}
+```
+Then you can call it like:
+```java
+Test test = new Test();
+test.start();
+int r = test.call("x4",new int[]{17});
+```
+I think there are ways of calling functions with more complicated parameters and returns,
+but I don't yet know how.
+
+#### Piping
+If you want to pipe into or out of a program, you can call like
+```java
+Runtime task = (Runtime) Class.forName("tests.EchoHelper").newInstance();
+task.closeFD(0);
+task.closeFD(1);
+//task.closeFD(2);
+task.addFD(new Runtime.InputOutputStreamFD(sock.getInputStream()));
+task.addFD(new Runtime.InputOutputStreamFD(sock.getOutputStream()));
+//task.dupFD(1);
+int status = task.run(new String[]{"EchoHelper"} );
+```
+stdin, stdout, and stderr are originally created like:
+```java
+addFD(new TerminalFD(stdin));
+addFD(new TerminalFD(System.out));
+addFD(new TerminalFD(System.err));
+```
+
+#### Shared array
+Apparently there's an array you can declare in your C code with N elements:
+```c
+char * user_info[2];
+```
+and access it in C like
+```c
+char *fontdata;
+int fontsize;
+
+_pause(); // I don't know whether this is necessary or what
+
+fontdata = user_info[0];
+fontsize = (int)user_info[1];
+```
+You can then access it from Java like
+```java
+byte[] font = InputStreamToByteArray.convert(new FileInputStream(argv[0]));
+int fontAddr = rt.malloc(font.length);
+if(fontAddr == 0) throw new Error("malloc() failed");
+rt.copyout(font,fontAddr,font.length);
+
+rt.setUserInfo(0,fontAddr);
+rt.setUserInfo(1,font.length);
+```
+
 
 [1]: http://nestedvm.ibex.org/
 [2]: http://article.gmane.org/gmane.comp.java.nestedvm/185
