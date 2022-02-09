@@ -27,6 +27,8 @@ public abstract class Platform {
         try {
             if(getProperty("java.vm.name").equals("SableVM"))
                 version = 1.2f;
+            else if(getProperty("java.vm.name").equals("Dalvik"))
+                version = 1.4f;
             else
                 version = Float.valueOf(getProperty("java.specification.version")).floatValue();
         } catch(Exception e) {
