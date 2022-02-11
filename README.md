@@ -46,6 +46,14 @@ requests with steps for other environments are certainly welcome.
 install Ubuntu 14.04.6 in VirtualBox and follow the Debian 8 instructions.
 I think that route gave me the least fuss.)
 
+There IS a Docker container, which was easier to build:
+```bash
+cd docker/debian
+docker build .
+```
+...but as of this writing, I don't yet know how to actually USE it once built,
+so until I figure that out, Debian VM remains my recommendation.
+
 ### Debian 8 etc:
 
     apt-get -y update && apt-get -y upgrade
@@ -131,7 +139,7 @@ You can then run the file in your Java code with e.g.
 int result = new Test.run("com.test.Test", new String[]{});
 ```
 That's not particularly useful, though.  See `src/tests/` for examples of
-more intricate usage.  I've gone through a bunch of the tests and filtered
+more intricate usage.  I've gone through the tests and filtered
 out some use case examples - I haven't tested all of these myself, so
 buyer beware.  See original tests if you encounter problems.
 
@@ -203,6 +211,67 @@ rt.copyout(font,fontAddr,font.length);
 rt.setUserInfo(0,fontAddr);
 rt.setUserInfo(1,font.length);
 ```
+
+#### Memory management
+There's a bunch of memory functions I'm sorta hazy on, like
+`malloc`, `free`, `realloc`, `xmalloc`, `xrealloc`, `brk`, `sbrk`,
+`memRead`, `memWrite`, `memset`, `memcpy`,
+`copyin`, `copyout`,
+and some string functions like `cstring`, `utfstring`, and `strdup`.
+
+#### Pausing
+I think you can pass control back to Java at will, by calling `_pause()`.
+In C:
+```c
+extern void _pause();
+
+// Then somewhere in code:
+_pause();
+```
+In Java, I think:
+```java
+rt.start();
+boolean exited = rt.execute();
+```
+If exited is false, the code simply paused.  (Or maybe something else
+happened that had the same result?)
+
+#### Callback to Java
+You can add a callback in Java that your C programs can call.  In Java:
+```java
+rt.setCallJavaCB(new Runtime.CallJavaCB() {
+    public int call(int a, int b, int c, int d) {
+        switch(a) {
+            case 1: return rt.strdup("OS: " + System.getProperty("os.name"));
+            case 2: return rt.strdup(System.getProperty("os.version"));
+            case 3: return rt.strdup(new Date().toString());
+            case 4: return rt.addFD(new Runtime.InputOutputStreamFD(null,new CustomOS()));
+            case 5:
+                System.out.println("In callJava() in Java");
+                try { rt.call("backinmips"); } catch(Runtime.CallException e) { }
+                System.out.println("Back in callJava() in Java");
+                return 0;
+            default: return 0;
+        }
+    }
+});
+```
+In C:
+```c
+extern int _call_java(int a, int b, int c, int d);
+
+// Then somewhere in code:
+char *s = (char*)_call_java(i,0,0,0);
+```
+It feels a little stilted and cramped, but the former could probably be solved by wrapper
+methods, and the latter by passing addresses to structures.  It seems sufficient, to me,
+if not perfect.
+
+#### Probably some other stuff
+There are probably other things it can do that you'll eventually want to do, which I haven't
+covered here and probably don't know about, but I think I covered most of the functions I've
+seen.
+
 
 
 [1]: http://nestedvm.ibex.org/
